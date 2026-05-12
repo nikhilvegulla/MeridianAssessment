@@ -4,9 +4,10 @@ namespace MeridianAssessment.Interfaces;
 
 public interface IMeridianClient
 {
-    public Task<object> GetSampleDataSet();
+    /// <summary>Full sample dataset as exact HTTP body bytes (cached on disk).</summary>
+    Task<byte[]?> GetSampleDataSetAsync();
 
-    public Task<RequestPayload> SubmitTask(RequestPayload payload);
+    Task<RequestPayload?> SubmitTask(RequestPayload payload);
 
-    public Task<string> GetSecretKey();
+    Task<string?> GetSecretKey();
 }

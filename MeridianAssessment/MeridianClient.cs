@@ -1,16 +1,24 @@
 using MeridianAssessment.Interfaces;
 using MeridianAssessment.Models;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
 namespace MeridianAssessment;
 
-public class MeridianClient: IMeridianClient
+public class MeridianClient : IMeridianClient
 {
-    private HttpClient httpClient;
+    public static readonly JsonSerializerOptions ApiJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private const int MaxRateLimitRetryAttempts = 5;
+
+    private readonly HttpClient httpClient;
     private string baseUrl = "";
     private string apiKey = "";
-
 
     public MeridianClient()
     {
@@ -18,58 +26,107 @@ public class MeridianClient: IMeridianClient
         httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
     }
 
-    public async Task<object> GetSampleDataSet()
+    public async Task<byte[]?> GetSampleDataSetAsync()
     {
-        var fileContent = FileHelper.ReadFromFile(Constants.FilePathConstants.SampleDataSetFilePath);
-        if(!string.IsNullOrEmpty(fileContent))
+        var cached = FileHelper.ReadAllBytes(Constants.FilePathConstants.SampleDataSetFilePath);
+        if (cached is { Length: > 0 })
+            return cached;
+
+        var response = await SendWithRetryAsync(() => httpClient.GetAsync($"{baseUrl}"));
+        try
         {
-            return fileContent;
+            var data = await response.Content.ReadAsByteArrayAsync();
+            if (data is not { Length: > 0 })
+                return null;
+
+            FileHelper.WriteAllBytes(Constants.FilePathConstants.SampleDataSetFilePath, data);
+            return data;
         }
-        var response = await ExecuteWithRetry(async () => await httpClient.GetAsync($"{baseUrl}"));
-        var data = await response.Content.ReadAsStringAsync();
-        if(!string.IsNullOrEmpty(data))
+        finally
         {
-            FileHelper.WriteToFile(Constants.FilePathConstants.SampleDataSetFilePath, data);
-            return JsonSerializer.Deserialize<object>(data);
+            response.Dispose();
         }
-        return null;
     }
 
-    public async Task<RequestPayload> SubmitTask(RequestPayload payload)
+    public async Task<RequestPayload?> SubmitTask(RequestPayload payload)
     {
-        var payloadJson = System.Text.Json.JsonSerializer.Serialize(payload);
-        var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
-        var response = await ExecuteWithRetry(async () => await httpClient.PostAsync($"{baseUrl}/submit", content));
-        var responseContent = await response.Content.ReadAsStringAsync();
-        if(!string.IsNullOrEmpty(responseContent))
+        var response = await SendWithRetryAsync(async () =>
         {
-            return JsonSerializer.Deserialize<RequestPayload>(responseContent);
+            var payloadJson = JsonSerializer.Serialize(payload, ApiJsonOptions);
+            using var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+            return await httpClient.PostAsync($"{baseUrl}/submit", content);
+        });
+        try
+        {
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!string.IsNullOrEmpty(responseContent))
+                return JsonSerializer.Deserialize<RequestPayload>(responseContent, ApiJsonOptions);
+            return null;
         }
-        return null;
-        return result;
+        finally
+        {
+            response.Dispose();
+        }
     }
 
-    public async Task<string> GetSecretKey()
+    public async Task<string?> GetSecretKey()
     {
-        var response = await ExecuteWithRetry(async () => await httpClient.GetAsync($"{baseUrl}/secret"));
-        var apiKey = await response.Content.ReadAsStringAsync();
-        if(!string.IsNullOrEmpty(apiKey))
+        var response = await SendWithRetryAsync(() => httpClient.GetAsync($"{baseUrl}/secret"));
+        try
         {
-            return JsonSerializer.Deserialize<string>(apiKey);
+            var body = await response.Content.ReadAsStringAsync();
+            if (!string.IsNullOrEmpty(body))
+                return JsonSerializer.Deserialize<string>(body, ApiJsonOptions);
+            return null;
         }
-        return null;
+        finally
+        {
+            response.Dispose();
+        }
     }
 
-    private async Task<T> ExecuteWithRetry<T>(Func<Task<T>> action)
+    /// <summary>Retries on 429 using <c>Retry-After</c> (at most <see cref="MaxRateLimitRetryAttempts"/> waits); otherwise enforces success status.</summary>
+    private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> send)
     {
-        try {
-            return await action();
+        var rateLimitRetries = 0;
+        while (true)
+        {
+            var response = await send();
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                if (rateLimitRetries >= MaxRateLimitRetryAttempts)
+                {
+                    response.Dispose();
+                    throw new HttpRequestException(
+                        $"Rate limited: exceeded maximum retry attempts ({MaxRateLimitRetryAttempts}).",
+                        null,
+                        HttpStatusCode.TooManyRequests);
+                }
+
+                rateLimitRetries++;
+                Console.WriteLine($"Rate limit hit ({rateLimitRetries}/{MaxRateLimitRetryAttempts}). Waiting...");
+                var delay = GetRetryAfterDelay(response);
+                response.Dispose();
+                await Task.Delay(delay);
+                continue;
+            }
+
+            return response.EnsureSuccessStatusCode();
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests) {
-            Console.WriteLine("Rate limit hit. Checking headers...");
-            var retryAfter = ex.Headers.GetValues("Retry-After").FirstOrDefault();
-            await Task.Delay(int.Parse(retryAfter)); 
-            return await ExecuteWithRetry(action);
+    }
+
+    private static TimeSpan GetRetryAfterDelay(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is { TotalMilliseconds: > 0 } d)
+            return d;
+        if (retryAfter?.Date is { } until)
+        {
+            var wait = until - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero)
+                return wait > TimeSpan.FromHours(1) ? TimeSpan.FromSeconds(5) : wait;
         }
+
+        return TimeSpan.FromSeconds(5);
     }
 }

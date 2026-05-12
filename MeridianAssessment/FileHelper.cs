@@ -15,6 +15,19 @@ public class FileHelper
             }
         }
 
+        public static void WriteAllBytes(string filePath, byte[] data)
+        {
+            try
+            {
+                File.WriteAllBytes(filePath, data);
+                Console.WriteLine($"Bytes successfully written to {filePath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error writing bytes to file: {ex.Message}");
+            }
+        }
+
     public static string ReadFromFile(string filePath)
     {
         try
@@ -35,6 +48,27 @@ public class FileHelper
         {
             Console.WriteLine($"Error reading from file: {ex.Message}");
             return string.Empty;
+        }
+    }
+
+    public static byte[]? ReadAllBytes(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                var bytes = File.ReadAllBytes(filePath);
+                Console.WriteLine($"Bytes successfully read from {filePath}");
+                return bytes;
+            }
+
+            Console.WriteLine($"File not found: {filePath}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading bytes from file: {ex.Message}");
+            return null;
         }
     }
 
