@@ -15,12 +15,8 @@ public class LevelThreeHandler
         _client = client;
     }
 
-    /// <summary>
-    /// Searches decrypted content and submits the layer-3 answer.
-    /// </summary>
-    /// <param name="decryptedDataset">Optional decrypted text or JSON from layer 2 for local search.</param>
     public Task<RequestPayload?> ProcessAsync(string? decryptedDataset = null)
     {
-        
+        return null;
     }
 }

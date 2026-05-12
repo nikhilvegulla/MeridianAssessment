@@ -17,30 +17,31 @@ public class MeridianClient : IMeridianClient
     private const int MaxRateLimitRetryAttempts = 5;
 
     private readonly HttpClient httpClient;
-    private string baseUrl = "";
-    private string apiKey = "";
+    private string baseUrl = "https://ca-seassessment-api-dev.happywater-190f264d.northcentralus.azurecontainerapps.io";
+    private string apiKey = "sa_2f8d50eb4593576221970f4573c4e3951877dce400e4538e289425613eae5f14";
 
     public MeridianClient()
     {
         httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromMinutes(10);
         httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
     }
 
-    public async Task<byte[]?> GetSampleDataSetAsync()
+    public async Task<DatasetPageResponse?> GetSampleDataSetAsync(int pageNumber = 1, int pageSize = 100)
     {
-        var cached = FileHelper.ReadAllBytes(Constants.FilePathConstants.SampleDataSetFilePath);
-        if (cached is { Length: > 0 })
-            return cached;
+        var raw = await GetSampleDataSetPageBytesAsync(pageNumber, pageSize);
+        if (raw is not { Length: > 0 })
+            return null;
+        return JsonSerializer.Deserialize<DatasetPageResponse>(raw, ApiJsonOptions);
+    }
 
-        var response = await SendWithRetryAsync(() => httpClient.GetAsync($"{baseUrl}"));
+    public async Task<byte[]?> GetSampleDataSetPageBytesAsync(int pageNumber = 1, int pageSize = 100)
+    {
+        var response = await SendWithRetryAsync(() =>
+            httpClient.GetAsync($"{baseUrl}/api/v1/dataset?page={pageNumber}&page_size={pageSize}"));
         try
         {
-            var data = await response.Content.ReadAsByteArrayAsync();
-            if (data is not { Length: > 0 })
-                return null;
-
-            FileHelper.WriteAllBytes(Constants.FilePathConstants.SampleDataSetFilePath, data);
-            return data;
+            return await response.Content.ReadAsByteArrayAsync();
         }
         finally
         {
@@ -48,19 +49,19 @@ public class MeridianClient : IMeridianClient
         }
     }
 
-    public async Task<RequestPayload?> SubmitTask(RequestPayload payload)
+    public async Task<SubmitResponse?> SubmitTask(RequestPayload payload)
     {
         var response = await SendWithRetryAsync(async () =>
         {
             var payloadJson = JsonSerializer.Serialize(payload, ApiJsonOptions);
             using var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
-            return await httpClient.PostAsync($"{baseUrl}/submit", content);
+            return await httpClient.PostAsync($"{baseUrl}/api/v1/submit", content);
         });
         try
         {
             var responseContent = await response.Content.ReadAsStringAsync();
             if (!string.IsNullOrEmpty(responseContent))
-                return JsonSerializer.Deserialize<RequestPayload>(responseContent, ApiJsonOptions);
+                return JsonSerializer.Deserialize<SubmitResponse>(responseContent, ApiJsonOptions);
             return null;
         }
         finally

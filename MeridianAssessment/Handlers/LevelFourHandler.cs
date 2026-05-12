@@ -15,12 +15,8 @@ public class LevelFourHandler
         _client = client;
     }
 
-    /// <summary>
-    /// Submits qualitative analysis. Use <paramref name="notes"/> for supporting detail (respect API size cap, e.g. ≤ 8 KiB).
-    /// </summary>
-    /// <param name="notes">Optional extended notes.</param>
     public Task<RequestPayload?> ProcessAsync(string? notes = null)
     {
-        
+        return null;
     }
 }

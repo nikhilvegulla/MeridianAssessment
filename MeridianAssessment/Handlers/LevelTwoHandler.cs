@@ -15,12 +15,8 @@ public class LevelTwoHandler
         _client = client;
     }
 
-    /// <summary>
-    /// Decrypts (or proves decryption of) the sample dataset and submits the layer-2 payload.
-    /// </summary>
-    /// <param name="layerOneResult">Optional outcome from layer 1 for sequencing in <see cref="Program"/>.</param>
     public Task<RequestPayload?> ProcessAsync(RequestPayload? layerOneResult = null)
     {
-        
+        return null;
     }
 }

@@ -4,10 +4,12 @@ namespace MeridianAssessment.Interfaces;
 
 public interface IMeridianClient
 {
-    /// <summary>Full sample dataset as exact HTTP body bytes (cached on disk).</summary>
-    Task<byte[]?> GetSampleDataSetAsync();
+    Task<DatasetPageResponse?> GetSampleDataSetAsync(int pageNumber = 1, int pageSize = 100);
 
-    Task<RequestPayload?> SubmitTask(RequestPayload payload);
+    /// <summary>Exact UTF-8 body bytes for one dataset page (for <c>content_hash</c> over wire content).</summary>
+    Task<byte[]?> GetSampleDataSetPageBytesAsync(int pageNumber = 1, int pageSize = 100);
+
+    Task<SubmitResponse?> SubmitTask(RequestPayload payload);
 
     Task<string?> GetSecretKey();
 }
